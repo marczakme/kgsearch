@@ -300,9 +300,6 @@ with col2:
             <a href="https://marczak.me" target="_blank">
                 <img src="https://marczak.me/media/website/marczakme-logo-mniejsze-2.png" width="120">
             </a>
-            <p style="font-size:12px; margin-top:8px">
-                Autorem wyszukiwarki jest <b>Robert Marczak</b>
-            </p>
         </div>
         """,
         unsafe_allow_html=True
