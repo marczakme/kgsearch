@@ -15,9 +15,6 @@ API_URL = "https://kgsearch.googleapis.com/v1/entities:search"
 
 
 def get_api_key() -> str:
-    """
-    Reads API key from Streamlit secrets first, then environment variables.
-    """
     try:
         return st.secrets["GOOGLE_KG_API_KEY"]
     except Exception:
@@ -25,11 +22,6 @@ def get_api_key() -> str:
 
 
 def google_kg_url(kg_id: str) -> str:
-    """
-    Builds a direct Google search URL for a Knowledge Graph entity.
-    Example:
-    kg:/g/11c6rj49j6 -> https://www.google.com/search?kgmid=/g/11c6rj49j6
-    """
     if not kg_id:
         return ""
 
@@ -38,11 +30,9 @@ def google_kg_url(kg_id: str) -> str:
 
 
 def google_query_url(query: str) -> str:
-    """
-    Builds a standard Google search URL from entity name/query.
-    """
     if not query:
         return ""
+
     return f"https://www.google.com/search?q={quote_plus(query)}"
 
 
@@ -52,8 +42,10 @@ def normalize_types(item_result: dict) -> str:
 
     if isinstance(types, list):
         return ", ".join(types)
+
     if isinstance(types, str):
         return types
+
     return ""
 
 
@@ -62,6 +54,7 @@ def extract_description(item_result: dict) -> str:
     desc = result.get("description", "")
 
     detailed = result.get("detailedDescription", {})
+
     if not desc and isinstance(detailed, dict):
         desc = detailed.get("articleBody", "")
 
@@ -74,6 +67,7 @@ def extract_source_url(item_result: dict) -> str:
 
     if isinstance(detailed, dict):
         return detailed.get("url", "") or ""
+
     return ""
 
 
@@ -81,6 +75,7 @@ def parse_response(data: dict) -> pd.DataFrame:
     rows = []
 
     for item in data.get("itemListElement", []):
+
         result = item.get("result", {})
         entity_name = result.get("name", "")
         kg_id = result.get("@id", "")
@@ -95,23 +90,15 @@ def parse_response(data: dict) -> pd.DataFrame:
                 "source_url": extract_source_url(item),
                 "image": result.get("image", {}).get("contentUrl", ""),
                 "google_kg_url": google_kg_url(kg_id),
-                "google_query_url": google_query_url(entity_name or ""),
+                "google_query_url": google_query_url(entity_name),
             }
         )
 
     return pd.DataFrame(rows)
 
 
-def search_kg(
-    query: str,
-    api_key: str,
-    limit: int = 10,
-    lang: str = "pl",
-    entity_types: list[str] | None = None,
-) -> dict:
-    """
-    Calls Google Knowledge Graph Search API.
-    """
+def search_kg(query, api_key, limit=10, lang="pl", entity_types=None):
+
     params = {
         "query": query,
         "key": api_key,
@@ -125,6 +112,7 @@ def search_kg(
 
     response = requests.get(API_URL, params=params, timeout=30)
     response.raise_for_status()
+
     return response.json()
 
 
@@ -132,30 +120,33 @@ def to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")
 
 
-def show_result_card(row: pd.Series) -> None:
+def show_result_card(row: pd.Series):
+
     with st.container(border=True):
+
         left, right = st.columns([5, 1])
 
         with left:
+
             st.markdown(f"### {row['name'] or 'Brak nazwy'}")
 
             if row["kg_id"]:
                 st.write(f"**KG ID:** `{row['kg_id']}`")
 
-            btn_col1, btn_col2 = st.columns(2)
+            btn1, btn2 = st.columns(2)
 
-            with btn_col1:
+            with btn1:
                 if row["google_kg_url"]:
                     st.link_button(
-                        "🧠 Otwórz wynik KG w Google",
+                        "🧠 Otwórz KG w Google",
                         row["google_kg_url"],
                         use_container_width=True,
                     )
 
-            with btn_col2:
+            with btn2:
                 if row["google_query_url"]:
                     st.link_button(
-                        "🔎 Zwykłe wyszukiwanie Google",
+                        "🔎 Google search",
                         row["google_query_url"],
                         use_container_width=True,
                     )
@@ -178,16 +169,17 @@ def show_result_card(row: pd.Series) -> None:
 
 
 st.title("🔎 KG Entity Finder")
-st.caption("Wyszukiwarka encji Google Knowledge Graph pod GitHub + Streamlit")
+st.caption("Wyszukiwarka encji Google Knowledge Graph")
 
 api_key = get_api_key()
 
 with st.sidebar:
+
     st.header("Ustawienia")
 
     query = st.text_input(
         "Fraza / encja",
-        placeholder="np. Robert Marczak, OpenAI, Google, Warsaw",
+        placeholder="np. Robert Marczak, Google, OpenAI, Warsaw",
     )
 
     lang = st.selectbox(
@@ -196,7 +188,7 @@ with st.sidebar:
         index=0,
     )
 
-    limit = st.slider("Liczba wyników", min_value=1, max_value=20, value=10)
+    limit = st.slider("Liczba wyników", 1, 20, 10)
 
     type_options = [
         "Person",
@@ -214,117 +206,104 @@ with st.sidebar:
     selected_types = st.multiselect(
         "Typ encji (opcjonalnie)",
         options=type_options,
-        default=[],
     )
 
     search_btn = st.button("Szukaj", type="primary", use_container_width=True)
 
+
 if not api_key:
     st.error(
-        "Brakuje klucza API. Dodaj `GOOGLE_KG_API_KEY` do `.streamlit/secrets.toml` "
-        "lub jako zmienną środowiskową."
+        "Brakuje klucza API. Dodaj GOOGLE_KG_API_KEY do `.streamlit/secrets.toml`"
     )
     st.stop()
 
-if not query and not search_btn:
-    st.info("Wpisz nazwę encji w panelu po lewej stronie i kliknij „Szukaj”.")
-    st.stop()
 
 if search_btn:
-    if not query.strip():
-        st.warning("Wpisz frazę do wyszukania.")
-        st.stop()
 
-    try:
-        with st.spinner("Szukam encji w Google Knowledge Graph..."):
-            data = search_kg(
-                query=query.strip(),
-                api_key=api_key,
-                limit=limit,
-                lang=lang,
-                entity_types=selected_types if selected_types else None,
+    with st.spinner("Szukam encji w Google Knowledge Graph..."):
+
+        data = search_kg(
+            query=query,
+            api_key=api_key,
+            limit=limit,
+            lang=lang,
+            entity_types=selected_types if selected_types else None,
+        )
+
+    df = parse_response(data)
+
+    st.subheader("Wyniki")
+
+    if df.empty:
+        st.warning("Brak wyników.")
+    else:
+
+        left, right = st.columns([3, 1])
+
+        with left:
+            st.dataframe(
+                df[
+                    [
+                        "name",
+                        "kg_id",
+                        "types",
+                        "result_score",
+                        "google_kg_url",
+                        "google_query_url",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "google_kg_url": st.column_config.LinkColumn(
+                        "KG w Google",
+                        display_text="Otwórz",
+                    ),
+                    "google_query_url": st.column_config.LinkColumn(
+                        "Google",
+                        display_text="Szukaj",
+                    ),
+                },
             )
 
-        df = parse_response(data)
+        with right:
 
-        st.subheader("Wyniki")
+            st.metric("Liczba wyników", len(df))
 
-        if df.empty:
-            st.warning("Brak wyników dla podanego zapytania.")
-        else:
-            display_df = df[
-                [
-                    "name",
-                    "kg_id",
-                    "types",
-                    "result_score",
-                    "description",
-                    "google_kg_url",
-                    "google_query_url",
-                    "source_url",
-                ]
-            ].copy()
+            st.download_button(
+                "Pobierz CSV",
+                data=to_csv_bytes(df),
+                file_name=f"kg_results_{query}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
-            display_df.columns = [
-                "name",
-                "kg_id",
-                "types",
-                "result_score",
-                "description",
-                "google_kg_url",
-                "google_query_url",
-                "source_url",
-            ]
+        st.subheader("Podgląd encji")
 
-            top_left, top_right = st.columns([3, 1])
+        for _, row in df.iterrows():
+            show_result_card(row)
 
-            with top_left:
-                st.dataframe(
-                    display_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "google_kg_url": st.column_config.LinkColumn(
-                            "KG w Google",
-                            display_text="Otwórz",
-                        ),
-                        "google_query_url": st.column_config.LinkColumn(
-                            "Google search",
-                            display_text="Szukaj",
-                        ),
-                        "source_url": st.column_config.LinkColumn(
-                            "Źródło",
-                            display_text="URL",
-                        ),
-                    },
-                )
 
-            with top_right:
-                st.metric("Liczba wyników", len(df))
+# ---------------------------------------------------
+# FOOTER
+# ---------------------------------------------------
 
-                st.download_button(
-                    label="Pobierz CSV",
-                    data=to_csv_bytes(df),
-                    file_name=f"kg_results_{query.strip().replace(' ', '_')}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                )
+st.markdown("---")
 
-            st.subheader("Podgląd kart")
+col1, col2, col3 = st.columns([3,1,3])
 
-            for _, row in df.iterrows():
-                show_result_card(row)
+with col2:
 
-            with st.expander("Surowa odpowiedź JSON"):
-                st.json(data)
-
-    except requests.HTTPError as e:
-        st.error(f"Błąd HTTP: {e}")
-        try:
-            st.json(e.response.json())
-        except Exception:
-            st.write("Nie udało się odczytać szczegółów błędu.")
-    except requests.RequestException as e:
-        st.error(f"Błąd połączenia: {e}")
-    except Exception as e:
-        st.error(f"Nieoczekiwany błąd: {e}")
+    st.markdown(
+        """
+        <div style="text-align:center">
+            <a href="https://marczak.me" target="_blank">
+                <img src="https://marczak.me/media/website/marczakme-logo-mniejsze-2.png" width="120">
+            </a>
+            <p style="font-size:12px; margin-top:8px">
+                Autorem wyszukiwarki jest <b>Robert Marczak</b>
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
